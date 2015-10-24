@@ -10,7 +10,7 @@ A lightweight socket.io based library to provide a clean, abstract way to manage
 ## Usage
 
 corridors uses a three step process to get up and running: init, configure, and run.
-
+```javascript
   var corridors = require('corridors');
 
   corridors.init(server);
@@ -28,8 +28,8 @@ corridors uses a three step process to get up and running: init, configure, and 
     configureUser: {}
   });
 
-  corridors.run();
-
+  corridors.run();`
+```
 ## Tests
 
   npm test
