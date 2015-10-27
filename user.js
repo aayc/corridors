@@ -5,7 +5,6 @@ module.exports = (function () {
 		this.id = uuid();
 		this.socketId = socket.id;
 		this._socket = socket;
-		this.name = "Untitled";
 		this.room = null;
 		for (var key in config) {
 			this[key] = config[key];

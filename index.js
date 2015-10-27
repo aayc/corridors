@@ -5,7 +5,7 @@ var Lobby = require('./lobby.js');
 
 var clone = function (obj) {
     if (obj === null || typeof obj !== 'object') return obj;
-    var temp = obj.constructor(); // give temp the original obj's constructor
+    var temp = obj.constructor();
     for (var key in obj) temp[key] = clone(obj[key]);
     return temp;
 }
@@ -24,16 +24,14 @@ module.exports = (function () {
 		shouldAllowUser: function (socket, data) {
 			return true;
 		},
+		onRegistrationSuccess: function (user) {},
 		messages: {},
 		configureRoom: {
-			// Default settings:
 			begin: function () {},
 			end: function () {},
 			removeMember: function (user) {}
 		},
 		configureUser: {}
-		//on User connect
-		// on user join same room events
 	};
 
 	var settings = {};
@@ -87,6 +85,7 @@ module.exports = (function () {
 				user.roomKey = settings.allowKeys ? data.roomKey : null;
 				users[user.id] = user;
 				socketIdToUserId[this.id] = user.id;
+				settings.onRegistrationSuccess(user);
 
 				/* Add user to the lobby */
 				lobby.addMember(user, user.roomKey);
@@ -151,10 +150,9 @@ module.exports = (function () {
 				var user = users[socketIdToUserId[socket.id]];
 
 				/* Erase user. */
-				if (user.inRoom()) {
+				if (user !== null  && user !== undefined && user.inRoom()) {
 					user.room._removeMember(user);
 					if (user.room.numMembers == 0) {
-						//console.log("ROOM " + user.room.id + " DESTROYED");
 						delete rooms[user.room.id];
 					}
 				}

@@ -1,6 +1,6 @@
 {
   "name": "corridors",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Node.js room-managing and configuration library built on top of socket.io ^1.3.7",
   "main": "index.js",
   "scripts": {

@@ -75,3 +75,4 @@ provided.  I would also like to be notified if possible.
 * 0.1.0 Initial release
 * 0.1.1 Updated readme
 * 0.1.2 Added room key functionality, authentication hook.
+* 0.1.3 Added server-side registration hook (onRegistrationSuccess), fixed browser-reload bug
