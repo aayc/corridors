@@ -1,7 +1,10 @@
 var chai = require('chai'),
     mocha = require('mocha'),
     should = chai.should();
-
+var vm = require('vm');
+var fs = require('fs');
+var code = fs.readFileSync("./corridors-client.js");
+vm.runInThisContext(code);
  
 var io = require('socket.io-client');
 var app = require('express')();
@@ -12,31 +15,21 @@ corridors.init(server);
 
 app.use(express.static('public'));
 server.listen(4004);
+
  
 describe("SINGLE USER BASIC TESTS", function () {
     var socket;
     
-
     before(function () {
         corridors.configure({
             maxMembers: 2,
-            messages: {
-            },
-            configureRoom: {
-                /*begin: function () {
-                    this._tellRoom("start room", {});
-                }*/
-            },
-            configureUser: {}
         });
         corridors.run();
     })
     
     beforeEach(function (done) {
-        socket = io.connect("http://localhost:4004", { multiplex: false });
-        socket.on('connect', function () {
-            done();
-        });
+        socket = io.connect("http://localhost:4004", {multiplex: false});
+        corridorify(socket, { onConnect: function () { done(); } });
     });
 
     afterEach(function(done) {
@@ -86,16 +79,19 @@ describe("MULTI USER BASIC TESTS", function () {
     })
     
     beforeEach(function (done) {
+        var flags = 0;
         for (var i = 0; i < sockets.length; i++) {
             sockets[i] = io.connect("http://localhost:4004", { multiplex: false});
-            sockets[i].on('ready?', function () {
-                this.emit("ready", {});
-            }.bind(sockets[i]));
+            
+            corridorify(sockets[i], {
+                onConnect: function () { 
+                    flags += 1;
+                    if (flags == sockets.length) {
+                        done();
+                    }
+                }
+            });
         }
-        sockets[sockets.length - 1].on('connect', function () { 
-            done();
-        });
-        
     });
 
     afterEach(function(done) {
@@ -108,6 +104,7 @@ describe("MULTI USER BASIC TESTS", function () {
     });
 
     it("should create 1 room for 3 users", function(done) {
+        Object.keys(corridors._getUsers()).length.should.equal(3);
         Object.keys(corridors._getRooms()).length.should.equal(1);
         done();
     });
@@ -135,14 +132,16 @@ describe("MULTI ROOM BASIC TESTS", function () {
 
     beforeEach(function (done) {
         var flags = 0;
-        for(var i = 0; i < sockets.length; i++) {
-            sockets[i] = io.connect("http://localhost:4004", {multiplex: false});
-            sockets[i].on('ready?', function () {
-                this.emit('ready', {});
-            }.bind(sockets[i]));
-            sockets[i].on('connect', function () {
-                flags += 1;
-                if (flags == sockets.length) done();
+        for (var i = 0; i < sockets.length; i++) {
+            sockets[i] = io.connect("http://localhost:4004", { multiplex: false});
+            
+            corridorify(sockets[i], {
+                onConnect: function () { 
+                    flags += 1;
+                    if (flags == sockets.length) {
+                        done();
+                    }
+                }
             });
         }
     });
@@ -159,8 +158,8 @@ describe("MULTI ROOM BASIC TESTS", function () {
         done();
     });
 
-    it("should have 1 user left over in the lobby", function (done) {
-       corridors._getLobby().numMembers.should.equal(1);
+    it("should have 1 user left over in the open room", function (done) {
+       corridors._getLobby()._getOpenPseudoRoom().length.should.equal(1);
        done();
     });
 });
@@ -181,16 +180,17 @@ describe("INTENSE CONCURRENCY TESTS", function () {
 
     beforeEach(function (done) {
         var flags = 0;
-        for(var i = 0; i < numUsers; i++) {
-            var socket = io.connect("http://localhost:4004", {multiplex: false});
-            sockets.push(socket);
-            sockets[i].on('ready?', function () {
-                this.emit('ready', {});
-            }.bind(sockets[i]));
-            sockets[i].on('connect', function () {
-                flags += 1;
-                if (flags == numUsers) done();
-            })
+        for (var i = 0; i < numUsers; i++) {
+            sockets[i] = io.connect("http://localhost:4004", { multiplex: false});
+            
+            corridorify(sockets[i], {
+                onConnect: function () { 
+                    flags += 1;
+                    if (flags == numUsers) {
+                        done();
+                    }
+                }
+            });
         }
     });
 
@@ -203,7 +203,7 @@ describe("INTENSE CONCURRENCY TESTS", function () {
     });
 
     it("should have 1 user left over in the lobby", function (done) {
-       corridors._getLobby().numMembers.should.equal(1);
+       corridors._getLobby()._getOpenPseudoRoom().length.should.equal(1);
        done();
     });
 
@@ -236,15 +236,17 @@ describe("ROOM COMMUNICATION TESTS", function () {
     });
 
     beforeEach(function (done) {
-        for(var i = 0; i < sockets.length; i++) {
-            sockets[i] = io.connect("http://localhost:4004", {multiplex: false});
-            sockets[i].on('ready?', function () {
-                this.emit('ready', {});
-            }.bind(sockets[i]));
+        var flags = 0;
+        for (var i = 0; i < sockets.length; i++) {
+            sockets[i] = io.connect("http://localhost:4004", { multiplex: false});
+            
+            corridorify(sockets[i], {
+                onConnect: function () { 
+                    flags += 1;
+                    if (flags == sockets.length) done();
+                }
+            });
         }
-        sockets[sockets.length - 1].on('connect', function () { 
-            done();
-        });
     });
 
     afterEach(function (done) {
@@ -314,15 +316,17 @@ describe("ROOM DATA STORAGE TESTS", function () {
     });
 
     beforeEach(function (done) {
-        for(var i = 0; i < sockets.length; i++) {
-            sockets[i] = io.connect("http://localhost:4004", {multiplex: false});
-            sockets[i].on('ready?', function () {
-                this.emit('ready', {});
-            }.bind(sockets[i]));
+        var flags = 0;
+        for (var i = 0; i < sockets.length; i++) {
+            sockets[i] = io.connect("http://localhost:4004", { multiplex: false});
+            
+            corridorify(sockets[i], {
+                onConnect: function () { 
+                    flags += 1;
+                    if (flags == sockets.length) done();
+                }
+            });
         }
-        sockets[sockets.length - 1].on('connect', function () { 
-            done();
-        });
     });
 
     afterEach(function (done) {
@@ -400,15 +404,17 @@ describe("USER DATA STORAGE TESTS", function () {
     });
 
     beforeEach(function (done) {
-        for(var i = 0; i < sockets.length; i++) {
-            sockets[i] = io.connect("http://localhost:4004", {multiplex: false});
-            sockets[i].on('ready?', function () {
-                this.emit('ready', {});
-            }.bind(sockets[i]));
+        var flags = 0;
+        for (var i = 0; i < sockets.length; i++) {
+            sockets[i] = io.connect("http://localhost:4004", { multiplex: false});
+            
+            corridorify(sockets[i], {
+                onConnect: function () { 
+                    flags += 1;
+                    if (flags == sockets.length) done();
+                }
+            });
         }
-        sockets[sockets.length - 1].on('connect', function () { 
-            done();
-        });
     });
 
     afterEach(function (done) {
@@ -485,15 +491,17 @@ describe("ROOM DATA MUTATION TESTS", function () {
     });
 
     beforeEach(function (done) {
-        for(var i = 0; i < sockets.length; i++) {
-            sockets[i] = io.connect("http://localhost:4004", {multiplex: false});
-            sockets[i].on('ready?', function () {
-                this.emit('ready', {});
-            }.bind(sockets[i]));
+        var flags = 0;
+        for (var i = 0; i < sockets.length; i++) {
+            sockets[i] = io.connect("http://localhost:4004", { multiplex: false});
+            
+            corridorify(sockets[i], {
+                onConnect: function () { 
+                    flags += 1;
+                    if (flags == sockets.length) done();
+                }
+            });
         }
-        sockets[sockets.length - 1].on('connect', function () { 
-            done();
-        });
     });
 
     afterEach(function (done) {
@@ -529,3 +537,200 @@ describe("ROOM DATA MUTATION TESTS", function () {
     });
 });
 
+describe("ROOM KEY TESTS", function () {
+    var sockets = [null, null, null, null, null];
+    before(function () {
+        corridors.reset();
+        corridors.configure({
+            maxMembers: 2,
+            allowKeys: true,
+            messages: {
+                "echo": function (user, data) {
+                    corridors.replyTo(user, "echo", {secret: data.secret});
+                },
+                "broadcast": function (user, data) {
+                    user.room._tellRoom("hey listen", {secret: data.secret});
+                },
+                "my room": function (user, data) {
+                    corridors.replyTo(user, "your room id", {roomId: user.room.id});
+                },
+                "store this": function (user, data) {
+                    user.room.storage.push(data.secret);
+                    corridors.replyTo(user, "done storing", {numStored: user.room.storage.length});
+                },
+                "tell me your secrets": function (user, data) {
+                    corridors.replyTo(user, "secrets", {secrets: user.room.storage});
+                }
+            },
+            configureRoom: {
+                storage: []
+            },
+            configureUser: {
+            }
+        });
+        corridors.run();
+    });
+
+    beforeEach(function (done) {
+        var flags = 0;
+        for (var i = 0; i < sockets.length; i++) {
+            sockets[i] = io.connect("http://localhost:4004", { multiplex: false});
+            var roomAssignment = i == 0 || i == 2 ? "A" : "B";
+            if (i == 4) roomAssignment = null;
+            corridorify(sockets[i], {
+                roomKey: roomAssignment,
+                onConnect: function () { 
+                    flags += 1;
+                    if (flags == sockets.length) done();
+                }
+            });
+        }
+    });
+
+    afterEach(function (done) {
+        for (var i = 0; i < sockets.length; i++) {
+            if (sockets[i].connected) sockets[i].disconnect();
+        }
+        setTimeout(done, 100);
+    });
+
+    it("should keep sockets[0, 2] in room A", function (done) {
+        sockets[0].on('your room id', function (data) {
+            data.roomId.should.equal("A");
+            sockets[2].on('your room id', function (data) {
+                data.roomId.should.equal("A");
+                done();
+            })
+            sockets[2].emit('my room');
+        });
+        sockets[0].emit('my room');
+    });
+
+    it("should keep sockets[1, 3] in room B", function (done) {
+        sockets[1].on('your room id', function (data) {
+            data.roomId.should.equal("B");
+            sockets[3].on('your room id', function (data) {
+                data.roomId.should.equal("B");
+                done();
+            })
+            sockets[3].emit('my room');
+        });
+        sockets[1].emit('my room');
+    });
+
+    it("should keep sockets[4] in uuid generated room", function (done) {
+        sockets[4].on('your room id', function (data) {
+            data.roomId.should.not.equal("A");
+            data.roomId.should.not.equal("B");
+            done();
+        });
+        sockets[4].emit('my room');
+    })
+
+    it("combo test", function (done) {
+        sockets[0].on('your room id', function (data) {
+            data.roomId.should.equal("A");
+            sockets[1].on('your room id', function (data) {
+                data.roomId.should.equal("B");
+                sockets[2].on('your room id', function (data) {
+                    data.roomId.should.equal("A");
+                    sockets[3].on('your room id', function (data) {
+                        data.roomId.should.equal("B");
+                        sockets[4].on('your room id', function (data) {
+                            data.roomId.should.not.equal("A");
+                            data.roomId.should.not.equal("B");
+                            done();
+                        })
+                        sockets[4].emit('my room');
+                    })
+                    sockets[3].emit('my room');
+                })
+                sockets[2].emit('my room');
+            })
+            sockets[1].emit('my room');
+        });
+        sockets[0].emit("my room");
+    });
+});
+
+describe("ROOM UNIQUENESS TESTS", function () {
+    var sockets = [null, null, null, null, null];
+    before(function () {
+        corridors.reset();
+        corridors.configure({
+            maxMembers: 2,
+            allowKeys: true,
+            messages: {
+                "echo": function (user, data) {
+                    corridors.replyTo(user, "echo", {secret: data.secret});
+                },
+                "broadcast": function (user, data) {
+                    user.room._tellRoom("hey listen", {secret: data.secret});
+                },
+                "my room": function (user, data) {
+                    corridors.replyTo(user, "your room id", {roomId: user.room.id});
+                },
+                "store this": function (user, data) {
+                    user.room.storage.push(data.secret);
+                    corridors.replyTo(user, "done storing", {numStored: user.room.storage.length});
+                },
+                "tell me your secrets": function (user, data) {
+                    corridors.replyTo(user, "secrets", {secrets: user.room.storage});
+                }
+            },
+            configureRoom: {
+                storage: []
+            },
+            configureUser: {
+            }
+        });
+        corridors.run();
+    });
+
+    beforeEach(function (done) {
+        var flags = 0;
+        for (var i = 0; i < sockets.length; i++) {
+            sockets[i] = io.connect("http://localhost:4004", { multiplex: false});
+
+            corridorify(sockets[i], {
+                roomKey: "coveted room",
+                onConnect: function () { 
+                    flags += 1;
+                    if (flags == sockets.length) {
+                        done();
+                    }
+                },
+                onReject: function () {
+                    this.denied = true;
+                    flags += 1;
+                    if (flags == sockets.length) done();
+                }
+            });
+        }
+    });
+
+    afterEach(function (done) {
+        for (var i = 0; i < sockets.length; i++) {
+            if (sockets[i].connected) {
+                sockets[i].denied = false;
+                sockets[i].disconnect();
+            }
+        }
+
+        setTimeout(done, 100);
+    });
+
+    it("should have 2 users because 3 were rejected", function (done) {
+        Object.keys(corridors._getUsers()).length.should.equal(2);
+        done();
+    });
+
+    it("should have 3 sockets getting denied registration", function (done) {
+        var flags = 0;
+        for (var i = 0; i < sockets.length; i++) {
+            flags += (sockets[i].denied) ? 1 : 0;
+        }
+        flags.should.equal(3);
+        done();
+    })
+});

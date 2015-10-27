@@ -16,9 +16,14 @@ module.exports = (function () {
 	var socketIdToUserId = {};
 	var rooms = {};
 	var lobby;
+	var registrationHandler;
 	var connectionHandler;
 	var defaults = {
 		maxMembers: 1,
+		allowKeys: true,
+		shouldAllowUser: function (socket, data) {
+			return true;
+		},
 		messages: {},
 		configureRoom: {
 			// Default settings:
@@ -27,6 +32,8 @@ module.exports = (function () {
 			removeMember: function (user) {}
 		},
 		configureUser: {}
+		//on User connect
+		// on user join same room events
 	};
 
 	var settings = {};
@@ -60,23 +67,45 @@ module.exports = (function () {
 		run: function () {
 			lobby = new Lobby(settings.maxMembers);
 
-			connectionHandler = function (socket) {
+			/* "this" is bound to the socket on which the function is invoked. */
+			registrationHandler = function (data) {
+				
+				/* Validate user */
+				var hasValidRoom = (data.roomKey === null || (!rooms.hasOwnProperty(data.roomKey) && settings.allowKeys));
+
+				if (!settings.shouldAllowUser(this, data) || (!hasValidRoom)) {
+					/* A room already exists with this key, and the room is by definition full */
+					/* Thus, reject the user. */
+					//console.log("DENY " + this.id + " for trying to enter " + data.roomKey);
+					//console.log("\tbecause " + rooms.hasOwnProperty(data.roomKey));
+					this.emit('_corridors_err_unique_room');
+					return;
+				}
+				
 				/* Create user and apply settings */
-				var user = new User(socket, clone(settings.configureUser));
+				var user = new User(this, clone(settings.configureUser));
+				user.roomKey = settings.allowKeys ? data.roomKey : null;
 				users[user.id] = user;
-				socketIdToUserId[socket.id] = user.id;
+				socketIdToUserId[this.id] = user.id;
 
 				/* Add user to the lobby */
-				lobby.addMember(user);
-				user.room = lobby;
+				lobby.addMember(user, user.roomKey);
 
-				/* If the lobby is now full, then flush to room */
-				if (lobby.full()) {
-					var createdRoom = new Room(corridors, lobby.flush(), io, clone(settings.configureRoom));
+				/* Retrieve full rooms and flush */
+				var fullRooms = lobby.flushFullRooms();
+				for (var roomId in fullRooms) {
+					var createdRoom = new Room(roomId, fullRooms[roomId], io, clone(settings.configureRoom));
+					//console.log("NEW ROOM: " + createdRoom.id);
 					rooms[createdRoom.id] = createdRoom;
 				}
 
-				corridors._setupHandlers(socket);
+				corridors._setupHandlers(this);
+				this.emit('_corridors_registered', {});
+			};
+
+			connectionHandler = function (socket) {
+				socket.emit('_corridors_connected', { id: socket.id });
+				socket.on('_corridors_register', registrationHandler.bind(socket));
 			};
 
 			io.on('connection', connectionHandler);
@@ -122,14 +151,17 @@ module.exports = (function () {
 				var user = users[socketIdToUserId[socket.id]];
 
 				/* Erase user. */
-				user.room._removeMember(user);
-				if (user.room.numMembers == 0) {
-					//console.log("ROOM " + user.room.id + " DESTROYED");
-					delete rooms[user.room.id];
+				if (user.inRoom()) {
+					user.room._removeMember(user);
+					if (user.room.numMembers == 0) {
+						//console.log("ROOM " + user.room.id + " DESTROYED");
+						delete rooms[user.room.id];
+					}
 				}
-				delete socketIdToUserId[socket.id];
-				delete users[user.id];
-				//console.log("REMOVE USER, # of users: " + Object.keys(users).length);
+				if (socketIdToUserId.hasOwnProperty(socket.id)) {
+					delete socketIdToUserId[socket.id];
+					delete users[user.id];
+				}
 			});
 		},
 

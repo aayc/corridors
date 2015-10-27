@@ -1,13 +1,11 @@
-var uuid = require('node-uuid');
-
 module.exports = (function () {
-	function Room (corridors, members, io, config) {
+	function Room (id, members, io, config) {
 		/* Apply settings */	
 		for (var key in config) {
 			this[key] = config[key];
 		}
-		this.id = uuid();
-		this.corridors = corridors;
+		
+		this.id = id;
 		this.members = members;
 		this.numMembers = Object.keys(this.members).length;
 		this.io = io;

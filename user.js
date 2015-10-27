@@ -13,7 +13,7 @@ module.exports = (function () {
 	}
 
 	User.prototype = {
-		inRoom: function () { return this.room === undefined || this.room === null; }
+		inRoom: function () { return this.room !== undefined && this.room !== null; }
 	}
 
 	return User;
