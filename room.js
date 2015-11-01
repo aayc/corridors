@@ -1,20 +1,15 @@
 module.exports = (function () {
-	function Room (id, members, io, config) {
+	function Room (id, maxMembers, io, config) {
 		/* Apply settings */	
 		for (var key in config) {
 			this[key] = config[key];
 		}
 		
 		this.id = id;
-		this.members = members;
-		this.numMembers = Object.keys(this.members).length;
+		this.maxMembers = maxMembers;
+		this.numMembers = 0;
+		this.members = {};
 		this.io = io;
-		for (var i in this.members) { 
-			this.members[i].room = this;
-			this.members[i]._socket.join(this.id);
-		}
-
-		this._waitForAll(onFinish = this.begin.bind(this));
 	}
 
 	Room.prototype = {
@@ -26,6 +21,22 @@ module.exports = (function () {
 				delete this.members[user.id];
 				this.numMembers -= 1;
 			}
+		},
+
+		_addMember: function (user) {
+			this.members[user.id] = user;
+			this.numMembers += 1;
+			user.room = this;
+			user._socket.join(this.id);
+			if (this._full()) this._start();
+		},
+
+		_full: function () {
+			return this.numMembers == this.maxMembers;
+		},
+
+		_start: function () {
+			this._waitForAll(onFinish = this.begin.bind(this));
 		},
 
 		_waitForAll: function (onFinish) {

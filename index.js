@@ -2,6 +2,7 @@ var io = require('socket.io')
 var User = require('./user.js');
 var Room = require('./room.js');
 var Lobby = require('./lobby.js');
+var uuid = require('node-uuid');
 
 var clone = function (obj) {
     if (obj === null || typeof obj !== 'object') return obj;
@@ -16,19 +17,20 @@ module.exports = (function () {
 	var socketIdToUserId = {};
 	var rooms = {};
 	var lobby;
+	var openRoomId = uuid();
 	var registrationHandler;
 	var connectionHandler;
 	var defaults = {
 		maxMembers: 1,
 		allowKeys: true,
+		userToRoomImmediately: false,
 		shouldAllowUser: function (socket, data) {
 			return true;
 		},
-		onRegistrationSuccess: function (user) {},
+		onRegistrationSuccess: function (user, registrationData) {},
 		messages: {},
 		configureRoom: {
 			begin: function () {},
-			end: function () {},
 			removeMember: function (user) {}
 		},
 		configureUser: {}
@@ -43,20 +45,16 @@ module.exports = (function () {
 
 		configure: function (options) {
 			// Impose defaults
-			for (var key in defaults) {
-				settings[key] = defaults[key];
-			}
+			settings = clone(defaults);
 
 			// Override defaults
 			for (var i in options) {
 				if (typeof options[i] === 'object' && options[i] !== null && settings.hasOwnProperty(i)) {
-					//console.log("corridors CONFIGURE: extend " + i + " by " + options[i]);
 					for (var j in options[i]) {
 						settings[i][j] = options[i][j];
 					}
 				}
 				else {
-					//console.log("corridors CONFIGURE: set " + i + " to " + options[i]);
 					settings[i] = options[i];
 				}
 			}
@@ -67,35 +65,59 @@ module.exports = (function () {
 
 			/* "this" is bound to the socket on which the function is invoked. */
 			registrationHandler = function (data) {
-				
 				/* Validate user */
-				var hasValidRoom = (data.roomKey === null || (!rooms.hasOwnProperty(data.roomKey) && settings.allowKeys));
+				var autoRoomPass = data.roomKey === null || !settings.allowKeys;
+				var roomIsFull = data.roomKey !== null && rooms.hasOwnProperty(data.roomKey) && rooms[data.roomKey]._full();
+				var auth = settings.shouldAllowUser(this, data);
 
-				if (!settings.shouldAllowUser(this, data) || (!hasValidRoom)) {
-					/* A room already exists with this key, and the room is by definition full */
-					/* Thus, reject the user. */
-					//console.log("DENY " + this.id + " for trying to enter " + data.roomKey);
-					//console.log("\tbecause " + rooms.hasOwnProperty(data.roomKey));
+				if ((!autoRoomPass && roomIsFull) || !auth) {
+					/* Reject the user */
 					this.emit('_corridors_err_unique_room');
 					return;
 				}
-				
+
 				/* Create user and apply settings */
 				var user = new User(this, clone(settings.configureUser));
 				user.roomKey = settings.allowKeys ? data.roomKey : null;
 				users[user.id] = user;
 				socketIdToUserId[this.id] = user.id;
-				settings.onRegistrationSuccess(user);
+				settings.onRegistrationSuccess(user, data);
 
-				/* Add user to the lobby */
-				lobby.addMember(user, user.roomKey);
+				if (settings.userToRoomImmediately) {
+					if (user.roomKey === null) {
+						/* No special room key, so allocate to open room*/
+						if (rooms.hasOwnProperty(openRoomId)) {
+							rooms[openRoomId]._addMember(user);
+						} else {
+							openRoomId = uuid();
+							var newOpenRoom = new Room(openRoomId, settings.maxMembers, io, clone(settings.configureRoom));
+							newOpenRoom._addMember(user);
+							rooms[openRoomId] = newOpenRoom
+						}
+					} else {
+						if (rooms.hasOwnProperty(user.roomKey)) {
+							rooms._addMember(user);
+						} else {
+							var createdRoom = new Room(uuid(), settings.maxMembers, io, clone(settings.configureRoom));
+							createdRoom._addMember(user);
+							rooms[createdRoom.id] = createdRoom;
+						}
+					}
+				}
+				else {
+					/* Add user to the lobby */
+					lobby.addMember(user, user.roomKey);
 
-				/* Retrieve full rooms and flush */
-				var fullRooms = lobby.flushFullRooms();
-				for (var roomId in fullRooms) {
-					var createdRoom = new Room(roomId, fullRooms[roomId], io, clone(settings.configureRoom));
-					//console.log("NEW ROOM: " + createdRoom.id);
-					rooms[createdRoom.id] = createdRoom;
+					/* Retrieve full rooms and flush */
+					var fullRooms = lobby.flushFullRooms();
+					for (var roomId in fullRooms) {
+						var createdRoom = new Room(roomId, settings.maxMembers, io, clone(settings.configureRoom));
+						//console.log("NEW ROOM: " + createdRoom.id);
+						for (var member in fullRooms[roomId]) {
+							createdRoom._addMember(fullRooms[roomId][member]);
+						}
+						rooms[createdRoom.id] = createdRoom;
+					}
 				}
 
 				corridors._setupHandlers(this);

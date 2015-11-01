@@ -449,14 +449,14 @@ describe("USER DATA STORAGE TESTS", function () {
     });
 
     it("should not let other guy see pocket", function (done) {
-        sockets[0].emit("store this", {secret: "secret 1"});
         sockets[0].on('done storing', function (data) {
-            sockets[1].emit("my pocket", {});
             sockets[1].once('secrets', function (data) {
                 data.secrets.length.should.equal(0);
                 done();
             });
+            sockets[1].emit("my pocket", {});
         });
+        sockets[0].emit("pocket", {secret: "secret 1"});
     });
 });
 
@@ -536,7 +536,6 @@ describe("ROOM DATA MUTATION TESTS", function () {
         });
     });
 });
-
 describe("ROOM KEY TESTS", function () {
     var sockets = [null, null, null, null, null];
     before(function () {
@@ -578,7 +577,9 @@ describe("ROOM KEY TESTS", function () {
             var roomAssignment = i == 0 || i == 2 ? "A" : "B";
             if (i == 4) roomAssignment = null;
             corridorify(sockets[i], {
-                roomKey: roomAssignment,
+                registrationData: {
+                    roomKey: roomAssignment
+                },
                 onConnect: function () { 
                     flags += 1;
                     if (flags == sockets.length) done();
@@ -693,7 +694,9 @@ describe("ROOM UNIQUENESS TESTS", function () {
             sockets[i] = io.connect("http://localhost:4004", { multiplex: false});
 
             corridorify(sockets[i], {
-                roomKey: "coveted room",
+                registrationData: {
+                    roomKey: "coveted room"
+                },
                 onConnect: function () { 
                     flags += 1;
                     if (flags == sockets.length) {
@@ -732,5 +735,149 @@ describe("ROOM UNIQUENESS TESTS", function () {
         }
         flags.should.equal(3);
         done();
+    })
+});
+
+describe("USER CHAT SERVER TESTS", function () {
+    var sockets = [null, null, null, null, null];
+    before(function () {
+        corridors.reset();
+        corridors.configure({
+            maxMembers: 3,
+            allowKeys: true,
+            messages: {
+                "say":function (user, data) {
+                    user.room._tellRoom("new message", {message: data.message, name: user.name});
+                }
+            },
+            configureRoom: {
+                storage: []
+            },
+            configureUser: {
+                name: ""
+            },
+            onRegistrationSuccess: function (user, data) {
+                user.name = data.name
+            }
+        });
+        corridors.run();
+    });
+
+    beforeEach(function (done) {
+        var flags = 0;
+        for (var i = 0; i < sockets.length; i++) {
+            sockets[i] = io.connect("http://localhost:4004", { multiplex: false});
+
+            corridorify(sockets[i], {
+                registrationData: {
+                    name: "user" + i
+                },
+                onConnect: function () { 
+                    flags += 1;
+                    if (flags == sockets.length) {
+                        done();
+                    }
+                }
+            });
+        }
+    });
+
+    afterEach(function (done) {
+        for (var i = 0; i < sockets.length; i++) {
+            if (sockets[i].connected) {
+                sockets[i].denied = false;
+                sockets[i].disconnect();
+            }
+        }
+
+        setTimeout(done, 100);
+    });
+
+    it("should have 1 room open", function (done) {
+        Object.keys(corridors._getRooms()).length.should.equal(1);
+        done();
+    });
+
+    it("should send a message 'hello' from user1", function (done) {
+        sockets[0].once('new message', function (data) {
+            data.message.should.equal('hello');
+            data.name.should.equal("user1");
+            done();
+        });
+
+        sockets[1].emit("say", {message: "hello"});
+    })
+});
+
+
+describe("IMMEDIATE ROOM ENTRY TESTS", function () {
+    var sockets = [null, null, null, null, null];
+    before(function () {
+        corridors.reset();
+        corridors.configure({
+            maxMembers: 30,
+            allowKeys: true,
+            userToRoomImmediately: true,
+            messages: {
+                "say":function (user, data) {
+                    user.room._tellRoom("new message", {message: data.message, name: user.name});
+                }
+            },
+            configureRoom: {
+                storage: []
+            },
+            configureUser: {
+                name: ""
+            },
+            onRegistrationSuccess: function (user, data) {
+                user.name = data.name
+            }
+        });
+        corridors.run();
+    });
+
+    beforeEach(function (done) {
+        var flags = 0;
+        for (var i = 0; i < sockets.length; i++) {
+            sockets[i] = io.connect("http://localhost:4004", { multiplex: false});
+
+            corridorify(sockets[i], {
+                registrationData: {
+                    name: "user" + i
+                },
+                onConnect: function () { 
+                    flags += 1;
+                    if (flags == sockets.length) {
+                        done();
+                    }
+                }
+            });
+        }
+    });
+
+    afterEach(function (done) {
+        for (var i = 0; i < sockets.length; i++) {
+            if (sockets[i].connected) {
+                sockets[i].denied = false;
+                sockets[i].disconnect();
+            }
+        }
+
+        setTimeout(done, 100);
+    });
+
+    it("should have 1 room open", function (done) {
+        Object.keys(corridors._getRooms()).length.should.equal(1);
+        done();
+    });
+
+    it("should send a message even though maxMembers not met", function (done) {
+        sockets[0].once('new message', function (data) {
+            data.message.should.equal('hello');
+            data.name.should.equal("user1");
+            done();
+        });
+
+        sockets[1].emit("say", {message: "hello"});
     })
 });
