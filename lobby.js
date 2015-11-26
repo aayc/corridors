@@ -41,6 +41,7 @@ module.exports = (function () {
 					this.pseudoRooms[roomKey] = [];
 				}
 				this.pseudoRooms[roomKey].push(user);
+				this.userIdToPseudoRoomId[user.id] = roomKey;
 				if (this.pseudoRooms[roomKey].length == this.maxMembers) {
 					this.fullRooms.push(roomKey);;	}
 			}
